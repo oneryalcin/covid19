@@ -1,0 +1,126 @@
+---
+title: "Covid-19"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+---
+
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+library(plotly)
+library(shinydashboard)
+library(flexdashboard)
+
+df <- read_csv('https://coronavirus.data.gov.uk/downloads/csv/coronavirus-cases_latest.csv')
+
+df <- df %>%  
+  rename(cases=`Daily lab-confirmed cases`, day =`Specimen date`, area_name='Area name', area_type = `Area type`)
+```
+
+
+Positive Tests Daily
+=======================================================================
+
+Row
+-----------------------------------------------------------------------
+
+### Total England Yesterday
+
+
+```{r}
+england = df %>% filter(area_type=='Nation') %>%
+  group_by(day) %>% 
+  summarise(total = sum(cases))
+
+yesterday = Sys.Date() - 1
+eng_yesterday = england %>% filter(day == yesterday)
+
+valueBox(eng_yesterday$total, caption = as.character(eng_yesterday$day), icon="fa-comments", color = "#05668d")
+
+```
+
+### Total
+
+```{r}
+valueBox(0, caption = "placeholder")#, icon="fa-comments")
+```
+
+### Total
+
+
+```{r}
+valueBox(0, caption = "placeholder")#, icon="fa-thumbs-up")
+```
+
+Row 
+-------------------------------------
+    
+### Reading Daily Cases
+
+```{r}
+
+reading = df %>%  
+  filter(area_name=='Reading') %>%  filter(area_type == "Lower tier local authority")
+
+g <- reading %>%  
+  ggplot(aes(x=day, y=cases)) + geom_col(fill = '#05668d') + theme_classic() +
+                           xlab("") + ylab("cases")
+
+
+ggplotly(g)
+```
+
+
+### London Daily Cases
+
+```{r}
+
+london = df %>% filter(area_name=='London')
+
+g <- london %>%  
+  ggplot(aes(x=day, y=cases)) + geom_col(fill = '#00a896') + theme_classic() +
+                           xlab("") + ylab("cases")
+
+
+ggplotly(g)
+```
+
+
+Row {.tabset .tabset-fade}
+-------------------------------------
+
+### England
+
+```{r}
+england = df %>% filter(area_type=='Nation') %>%
+  group_by(day) %>% 
+  summarise(total = sum(cases))
+
+g <- england %>%  ggplot(aes(x=day, y=total)) +
+                           geom_col(fill = '#02c39a') + 
+                           theme_classic() +
+                           xlab("") + ylab("cases")
+
+                         
+ggplotly(g)
+
+```
+
+### England by Region
+    
+```{r}
+regions = df %>% filter(area_type=='Region', area_name != 'London')
+
+g <- regions %>%  ggplot(aes(x=day, y=cases)) +
+                           geom_col(fill = '#f9c74f') +
+                           facet_wrap(~area_name, nrow = 2) +
+                           xlab("") + ylab("cases") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+                         
+ggplotly(g)
+
+```
+
+
