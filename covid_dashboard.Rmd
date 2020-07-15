@@ -14,22 +14,52 @@ library(lubridate)
 library(plotly)
 library(shinydashboard)
 library(flexdashboard)
+library(zoo)
 
 df <- read_csv('https://coronavirus.data.gov.uk/downloads/csv/coronavirus-cases_latest.csv')
 
+deaths <- read_csv('https://coronavirus.data.gov.uk/downloads/csv/coronavirus-deaths_latest.csv')
+
+
 df <- df %>%  
   rename(cases=`Daily lab-confirmed cases`, day =`Specimen date`, area_name='Area name', area_type = `Area type`)
+
+deaths <- deaths %>%  
+  rename(deaths=`Daily change in deaths`, day =`Reporting date`, area_name='Area name', area_type = `Area type`)
+
 ```
 
 
-Positive Tests Daily
+Summary
 =======================================================================
 
 
-Row {data-height=350}
+Row {data-height=50}
 -------------------------------------
 
-### Total England Yesterday {data-width=40}
+### Total England cases
+
+
+```{r}
+england <- df %>% filter(area_type=='Nation')
+total_cases = england[which.max(england$day),]
+
+valueBox(paste(as.character(total_cases$`Cumulative lab-confirmed cases`), ""), caption = "total cases in England", color = "#05668d")
+
+```
+
+### Total England deaths
+
+
+```{r}
+england <- deaths %>% filter(area_type=='Nation', area_name == 'England')
+total_deaths = england[which.max(england$day),]
+
+valueBox( paste(as.character(total_deaths$`Cumulative deaths`), ""), caption = "total deaths in England" , color = "#05668d")
+
+```
+
+### Last data England cases
 
 
 ```{r}
@@ -37,15 +67,34 @@ england <- df %>% filter(area_type=='Nation') %>%
   group_by(day) %>% 
   summarise(total = sum(cases))
 
-last_data = df[which.max(england$day),]
+yesterday = Sys.Date() - 2
+eng_yesterday = england %>% filter(day == yesterday)
 
-valueBox(last_data$total, caption = as.character(last_data$day), icon="fa-comments", color = "#05668d")
+valueBox( paste(as.character(eng_yesterday$total), "cases in England"), caption = paste("on ", as.character(eng_yesterday$day)), color = "#05668d")
+
+```
+
+### Last data England deaths
+
+
+```{r}
+england <- deaths %>% filter(area_type=='Nation', area_name == 'England') %>%
+  group_by(day) %>% 
+  summarise(total = sum(deaths))
+
+yesterday = Sys.Date() - 2
+eng_yesterday = england %>% filter(day == yesterday)
+
+valueBox( paste(as.character(eng_yesterday$total), "deaths in England"), caption = paste("on ", as.character(eng_yesterday$day)), color = "#05668d")
 
 ```
 
 
 
-### England Total
+Row
+-------------------------------------
+
+### **England cases**
 
 ```{r}
 england = df %>% filter(area_type=='Nation') %>%
@@ -55,17 +104,41 @@ england = df %>% filter(area_type=='Nation') %>%
 g <- england %>%  ggplot(aes(x=day, y=total)) +
                            geom_col(fill = '#02c39a') + 
                            theme_classic() +
-                           xlab("") + ylab("cases")
+                           xlab("") + ylab("cases") +
+                           geom_line(aes(y=rollmean(total, 7, na.pad=TRUE)))
+
 
 ggplotly(g)
 
 ```
 
 
-Row {data-height=750}
--------------------------------------
+### **UK Deaths by nation**
+
+```{r}
+deaths_by_nation = deaths %>% filter(area_type=='Nation') %>%
+  group_by(day, area_name) %>% 
+  summarise(total = sum(deaths))
+
+g <- deaths_by_nation %>%  ggplot(aes(x=day, y=total, fill = area_name)) +
+                           geom_col() + 
+                           theme_classic() +
+                           xlab("") + ylab("deaths") + scale_fill_manual(name = "",values = c("#02c39a", "#05668d", "#028090", "#00a896")) +
+    theme(legend.position = 'top')
+
+
+ggplotly(g)   %>%
+  layout(legend = list(
+      orientation = "h", x = 0.5
+    )
+  )
+
+```
+
+England cases by Local authority
+=======================================================================
     
-### Local authority daily cases
+### **England cases by Local authority** 
 
 ```{r}
 
@@ -76,18 +149,18 @@ local = df %>%
 library(shiny)
 
 ui <- fluidPage(
-  titlePanel("Dashboard"),
+  titlePanel("Choose your area:"),
   
   # Sidebar with a slider input for number of bins 
-  sidebarLayout(
-    sidebarPanel(width =3,
-      selectInput(inputId = "area_name", label = ("Local authority"),
+  sidebarLayout(position = "left", fluid = TRUE,
+    sidebarPanel(#width =3,
+      selectInput(inputId = "area_name", label = (""),
                   choices = unique(local$area_name), selected = 'Reading'
       )),
     
     
-    mainPanel(width =7,
-      plotlyOutput(outputId = "plot", height = "500px", width="500px")
+    mainPanel(#width =9,
+      plotlyOutput(outputId = "plot")#, height = "350px", width="650px")
     )
   )
 )
@@ -99,12 +172,12 @@ server <- function(input, output) {
     dplyr::filter(local, local$area_name==input$area_name)
   })
   output$plot <- renderPlotly({
-    #par(mar=c(1,1,1,1))
 
     
    g = local %>% 
       filter(area_name %in% input$area_name) %>% 
-      ggplot(aes(x= filtered_data()$day, y= filtered_data()$cases)) + geom_bar(stat = "identity", fill = '#05668d') + xlab("") + ylab("cases") + theme_classic()
+      ggplot(aes(x= filtered_data()$day, y= filtered_data()$cases)) + geom_bar(stat = "identity", fill = '#028090') + xlab("") + ylab("cases") + theme_classic() + geom_line(aes(y=rollmean(filtered_data()$cases, 7, na.pad=TRUE)))
+
 
    ggplotly(g)
     
@@ -116,8 +189,10 @@ shinyApp(ui = ui, server = server)
 ```
 
 
+England cases by Region
+=======================================================================
 
-### England by Region
+### **England cases by Region**
 
 
 ```{r}
@@ -128,20 +203,20 @@ regions = df %>% filter(area_type=='Region')
 library(shiny)
 
 ui <- fluidPage(
-  titlePanel("Dashboard"),
+  titlePanel("Choose your region:"),
   
   # Sidebar with a slider input for number of bins 
-  sidebarLayout(
-    sidebarPanel(width =3,
-      selectInput(inputId = "area_name", label = ("Region"),
+  sidebarLayout(position = "left", fluid = TRUE,
+    sidebarPanel(#width =3,
+      selectInput(inputId = "area_name", label = (""),
                   choices = unique(regions$area_name), selected = 'London'
       )),
     
     
     
     
-    mainPanel(width = 7,
-      plotlyOutput(outputId = "plot", height = "500px", width="500px")
+    mainPanel(#width = 7,
+      plotlyOutput(outputId = "plot")#, height = "350px", width="650px")
     )
   )
 )
@@ -158,7 +233,8 @@ server <- function(input, output) {
     
    g = regions %>% 
       filter(area_name %in% input$area_name) %>% 
-      ggplot(aes(x= filtered_data()$day, y= filtered_data()$cases)) + geom_bar(stat = "identity", fill = '#f9c74f') + xlab("") + ylab("cases") + theme_classic()
+      ggplot(aes(x= filtered_data()$day, y= filtered_data()$cases)) + geom_bar(stat = "identity", fill = '#00a896') + xlab("") + ylab("cases") + theme_classic() + geom_line(aes(y=rollmean(filtered_data()$cases, 7, na.pad=TRUE)))
+
 
    ggplotly(g)
     
@@ -168,4 +244,5 @@ server <- function(input, output) {
 
 shinyApp(ui = ui, server = server)
 ```
+
 
