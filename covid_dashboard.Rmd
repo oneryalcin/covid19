@@ -28,6 +28,21 @@ df <- df %>%
 deaths <- deaths %>%  
   rename(deaths=`Daily change in deaths`, day =`Reporting date`, area_name='Area name', area_type = `Area type`)
 
+
+# add columns to identify data for past 7 and 14 days
+
+one_week_ago = Sys.Date() - 9
+two_weeks_ago = one_week_ago - 14
+
+df <- df %>%
+mutate(date_range = case_when(day >= one_week_ago ~ 'past7days',
+                              day >= two_weeks_ago & day < one_week_ago ~ "past7-14days"))
+
+
+deaths <- deaths %>%
+mutate(date_range = case_when(day >= one_week_ago ~ 'past7days',
+                              day >= two_weeks_ago & day < one_week_ago ~ "past7-14days"))
+
 ```
 
 
@@ -54,13 +69,12 @@ valueBox(as.character(total_cases$`Cumulative lab-confirmed cases`), caption = "
 
 ```{r}
 england <- df %>% filter(area_type=='Nation') %>%
-  group_by(day) %>% 
+  group_by(date_range) %>% 
   summarise(total = sum(cases))
 
-yesterday = Sys.Date() - 1
-eng_yesterday = england %>% filter(day == yesterday)
+last7_days = england %>% filter(date_range == "past7days")
 
-valueBox( paste("+ ",as.character(eng_yesterday$total)), caption = paste("cases on ", as.character(eng_yesterday$day)), color = "#05668d")
+valueBox( paste("+ ",as.character(last7_days$total)), caption = "cases in last 7 days", color = "#05668d")
 
 ```
 
@@ -81,13 +95,12 @@ valueBox(as.character(total_deaths$`Cumulative deaths`) , caption = "total death
 
 ```{r}
 england <- deaths %>% filter(area_type=='Nation', area_name == 'England') %>%
-  group_by(day) %>% 
+  group_by(date_range) %>% 
   summarise(total = sum(deaths))
 
-yesterday = Sys.Date() - 1
-eng_yesterday = england %>% filter(day == yesterday)
+last7_days = england %>% filter(date_range == "past7days")
 
-valueBox( paste("+", as.character(eng_yesterday$total)), caption = paste("deaths on ", as.character(eng_yesterday$day)), color = '#02c39a')
+valueBox( paste("+", as.character(last7_days$total)), caption = "deaths in last 7 days", color = '#02c39a')
 
 ```
 
