@@ -43,6 +43,22 @@ deaths <- deaths %>%
 mutate(date_range = case_when(day >= one_week_ago+1 ~ 'past7days',
                               day >= two_weeks_ago+1 & day < one_week_ago+1 ~ "past7-14days"))
 
+# calculate last week cases per area/region
+
+cases_lw_per_area = df %>% filter(date_range == 'past7days', area_type == "Lower tier local authority") %>% group_by(area_name) %>% summarise(total = sum(cases))
+cases_lw_per_regions = df %>% filter(date_range == 'past7days', area_type == "Region") %>% group_by(area_name) %>% summarise(total = sum(cases))
+
+
+# calculate last week and 2 weeks ago cases per area for lockdown forecast
+compare_weeks = df %>% 
+  filter(is.na(date_range) == FALSE, area_type == "Lower tier local authority") %>% 
+  group_by(area_name, date_range) %>% 
+  summarise(total = sum(cases)) %>% 
+  spread(date_range, total) %>%
+  mutate(diff = past7days - `past7-14days`) %>%
+  arrange(-diff)
+
+
 ```
 
 
@@ -77,6 +93,8 @@ last7_14_days = england %>% filter(date_range == "past7-14days")
 
 pct = round((last7_days$total- last7_14_days$total) / last7_14_days$total*100,0)
 
+if (pct > 0) {pct = paste("+", pct, sep = "")}
+
 valueBox( paste("+ ",as.character(last7_days$total)," (", pct,"%)"), caption = "cases last week", color = "#05668d")
 
 ```
@@ -106,9 +124,164 @@ last7_14_days = england %>% filter(date_range == "past7-14days")
 
 pct = round((last7_days$total- last7_14_days$total) / last7_14_days$total*100,0)
 
+if (pct > 0) {pct = paste("+", pct, sep = "")}
+
 valueBox( paste("+", as.character(last7_days$total),"(", pct,"%)"), caption = "deaths last week", color = '#02c39a')
 
 ```
+
+
+Row {data-height=450}
+-------------------------------------
+
+### **England cases by local authority** 
+
+
+```{r}
+
+local = df %>%  
+  filter(area_type == "Lower tier local authority")
+
+
+library(shiny)
+
+ui <- fluidPage(
+  titlePanel("Choose your borough:"),
+  
+  # Sidebar with a slider input for number of bins 
+  sidebarLayout(position = "left", fluid = TRUE,
+    sidebarPanel(width =3,
+                 
+      valueBoxOutput("box"),
+      selectInput(inputId = "area_name", label = (""),
+                  choices = unique(local$area_name), selected = 'Reading'
+      )),
+    
+    
+    mainPanel(width =6,
+      plotlyOutput(outputId = "plot", height = "200px")
+    )
+  )
+)
+
+
+# Define server logic required to draw a histogram
+server <- function(input, output) {
+  filtered_data<- reactive({
+    dplyr::filter(local, local$area_name==input$area_name)
+  })
+  
+  filtered_data_lw_total<- reactive({
+    dplyr::filter(cases_lw_per_area, cases_lw_per_area$area_name==input$area_name)
+  })
+
+  output$plot <- renderPlotly({
+
+    
+   g = local %>% 
+      filter(area_name %in% input$area_name) %>% 
+      ggplot() +
+      geom_bar(stat = "identity", fill = '#028090', aes(x= filtered_data()$day, y= filtered_data()$cases, 
+              text = paste(" date:",filtered_data()$day, "\n", "cases:", filtered_data()$cases ))) + 
+      geom_line(aes(x= filtered_data()$day, y=rollmean(filtered_data()$cases, 7, na.pad=TRUE))) +
+      xlab("") + ylab("cases") + 
+      theme_classic() 
+
+
+  ggplotly(g, tooltip = "text")
+    
+  })
+  
+  output$box <- renderValueBox({
+  valueBox(paste(filtered_data_lw_total()$total, "cases were recorded last week in"))
+   })
+
+}
+
+
+shinyApp(ui = ui, server = server)
+
+
+```
+
+
+
+
+
+Row {data-height=450}
+-------------------------------------
+
+### **England cases by region**
+
+
+```{r}
+
+regions = df %>% filter(area_type=='Region')
+
+
+library(shiny)
+
+ui <- fluidPage(
+  titlePanel("Choose your region:"),
+  
+  # Sidebar with a slider input for number of bins 
+  sidebarLayout(position = "left", fluid = TRUE,
+    sidebarPanel(width =3,
+      valueBoxOutput("box"),
+      
+      selectInput(inputId = "area_name", label = (""),
+                  choices = unique(regions$area_name), selected = 'South East'
+      )
+      
+      
+      ),
+    
+
+    mainPanel(width = 6,
+              plotlyOutput(outputId = "plot", height = "200px"))))
+
+
+
+# Define server logic required to draw a histogram
+server <- function(input, output) {
+  filtered_data<- reactive({
+    dplyr::filter(regions, regions$area_name==input$area_name)
+  })
+
+    filtered_data_lw_total<- reactive({
+    dplyr::filter(cases_lw_per_regions, cases_lw_per_regions$area_name==input$area_name)
+  })
+
+    
+  output$plot <- renderPlotly({
+    
+   g <- regions %>% 
+      filter(area_name %in% input$area_name) %>%
+      ggplot() +
+      geom_bar(stat = "identity", fill = '#00a896', aes(x= filtered_data()$day, y= filtered_data()$cases, 
+                 text = paste(" date:",filtered_data()$day, "\n", "cases:", filtered_data()$cases))) + 
+      geom_line(aes(x = filtered_data()$day, y=rollmean(filtered_data()$cases, 7, na.pad=TRUE))) +
+      xlab("") + ylab("cases") + 
+      theme_classic() 
+
+  ggplotly(g, tooltip = "text")
+
+  })
+  
+  output$box <- renderValueBox({
+    valueBox(paste(filtered_data_lw_total()$total, "cases were recorded last week in"))
+   })
+}
+
+
+shinyApp(ui = ui, server = server)
+```
+
+
+
+
+
+
 
 
 
@@ -154,126 +327,17 @@ ggplotly(g)   %>%
 
 ```
 
-Row {data-height=450}
+
+
+
+
+Row
 -------------------------------------
 
-### **England cases by region**
 
-
-```{r}
-
-regions = df %>% filter(area_type=='Region')
-
-
-library(shiny)
-
-ui <- fluidPage(
-  titlePanel("Choose your region:"),
-  
-  # Sidebar with a slider input for number of bins 
-  sidebarLayout(position = "left", fluid = TRUE,
-    sidebarPanel(width =3,
-      selectInput(inputId = "area_name", label = (""),
-                  choices = unique(regions$area_name), selected = 'South East'
-      )),
-    
-    
-    
-    
-    mainPanel(width = 6,
-      plotlyOutput(outputId = "plot", height = "200px"))
-    )
-  )
-
-
-
-# Define server logic required to draw a histogram
-server <- function(input, output) {
-  filtered_data<- reactive({
-    dplyr::filter(regions, regions$area_name==input$area_name)
-  })
-  output$plot <- renderPlotly({
-    
-   g <- regions %>% 
-      filter(area_name %in% input$area_name) %>%
-      ggplot() +
-      geom_bar(stat = "identity", fill = '#00a896', aes(x= filtered_data()$day, y= filtered_data()$cases, 
-                 text = paste(" date:",filtered_data()$day, "\n", "cases:", filtered_data()$cases))) + 
-      geom_line(aes(x = filtered_data()$day, y=rollmean(filtered_data()$cases, 7, na.pad=TRUE))) +
-      xlab("") + ylab("cases") + 
-      theme_classic() 
-
-  ggplotly(g, tooltip = "text")
-
-  })
-}
-
-
-shinyApp(ui = ui, server = server)
-```
-
-
-Row {data-height=450}
--------------------------------------
-
-### **England cases by local authority** 
+### **Areas at high lockdown risk**
 
 ```{r}
-
-local = df %>%  
-  filter(area_type == "Lower tier local authority")
-
-
-library(shiny)
-
-ui <- fluidPage(
-  titlePanel("Choose your area:"),
-  
-  # Sidebar with a slider input for number of bins 
-  sidebarLayout(position = "left", fluid = TRUE,
-    sidebarPanel(width =3,
-      selectInput(inputId = "area_name", label = (""),
-                  choices = unique(local$area_name), selected = 'Reading'
-      )),
-    
-    
-    mainPanel(width =6,
-      plotlyOutput(outputId = "plot", height = "200px")
-    )
-  )
-)
-
-
-# Define server logic required to draw a histogram
-server <- function(input, output) {
-  filtered_data<- reactive({
-    dplyr::filter(local, local$area_name==input$area_name)
-  })
-  output$plot <- renderPlotly({
-
-    
-   g = local %>% 
-      filter(area_name %in% input$area_name) %>% 
-      ggplot() +
-      geom_bar(stat = "identity", fill = '#028090', aes(x= filtered_data()$day, y= filtered_data()$cases, 
-              text = paste(" date:",filtered_data()$day, "\n", "cases:", filtered_data()$cases ))) + 
-      geom_line(aes(x= filtered_data()$day, y=rollmean(filtered_data()$cases, 7, na.pad=TRUE))) +
-      xlab("") + ylab("cases") + 
-      theme_classic() 
-
-
-  ggplotly(g, tooltip = "text")
-    
-  })
-}
-
-
-shinyApp(ui = ui, server = server)
-
-
+library(DT)
+datatable(compare_weeks)
 ```
-
-
-
-
-
