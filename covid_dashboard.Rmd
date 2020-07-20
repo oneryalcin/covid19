@@ -16,6 +16,7 @@ library(plotly)
 library(shinydashboard)
 library(flexdashboard)
 library(zoo)
+library(shiny)
 
 df <- read_csv('https://coronavirus.data.gov.uk/downloads/csv/coronavirus-cases_latest.csv')
 
@@ -45,18 +46,34 @@ mutate(date_range = case_when(day >= one_week_ago+1 ~ 'past7days',
 
 # calculate last week cases per area/region
 
-cases_lw_per_area = df %>% filter(date_range == 'past7days', area_type == "Lower tier local authority") %>% group_by(area_name) %>% summarise(total = sum(cases))
-cases_lw_per_regions = df %>% filter(date_range == 'past7days', area_type == "Region") %>% group_by(area_name) %>% summarise(total = sum(cases))
+cases_per_area = df %>% filter(area_type == "Lower tier local authority") %>% group_by(date_range, area_name) %>% summarise(total = sum(cases))
+
+cases_per_regions = df %>% filter(area_type == "Region") %>% group_by(date_range, area_name) %>% summarise(total = sum(cases))
 
 
 # calculate last week and 2 weeks ago cases per area for lockdown forecast
+england <- df %>% filter(area_type=='Nation') %>%
+  group_by(date_range) %>% 
+  summarise(total = sum(cases))
+
+last7_days = england %>% filter(date_range == "past7days")
+
+
 compare_weeks = df %>% 
   filter(is.na(date_range) == FALSE, area_type == "Lower tier local authority") %>% 
   group_by(area_name, date_range) %>% 
   summarise(total = sum(cases)) %>% 
   spread(date_range, total) %>%
-  mutate(diff = past7days - `past7-14days`) %>%
+  mutate(diff = past7days - `past7-14days`, 
+         diff_pct =  round(((past7days - `past7-14days`)/`past7-14days`) * 100,0),
+         eng_last_week = last7_days$total) %>%
   arrange(-diff)
+
+compare_weeks[is.na(compare_weeks)] <- 0
+
+
+compare_weeks$diff_pct <-
+ifelse(compare_weeks$diff_pct > 0, paste("+", compare_weeks$diff_pct, "%", sep = ""), paste(compare_weeks$diff_pct,"%", sep = "")) 
 
 
 ```
@@ -91,9 +108,11 @@ england <- df %>% filter(area_type=='Nation') %>%
 last7_days = england %>% filter(date_range == "past7days")
 last7_14_days = england %>% filter(date_range == "past7-14days")
 
+compare_weeks$eng_last_week = last7_days$total
+
 pct = round((last7_days$total- last7_14_days$total) / last7_14_days$total*100,0)
 
-if (pct > 0) {pct = paste("+", pct, sep = "")}
+if (pct > 0) {pct = paste("+", substring(pct,2), sep = "")}
 
 valueBox( paste("+ ",as.character(last7_days$total)," (", pct,"%)"), caption = "cases last week", color = "#05668d")
 
@@ -136,14 +155,14 @@ Row {data-height=450}
 
 ### **England cases by local authority** 
 
-
 ```{r}
 
 local = df %>%  
   filter(area_type == "Lower tier local authority")
 
+cases_lw_per_area = df %>% filter(date_range == 'past7days', area_type == "Lower tier local authority") %>% group_by(area_name) %>% summarise(total = sum(cases))
 
-library(shiny)
+cases_2wago_per_area = df %>% filter(date_range == 'past7-14days', area_type == "Lower tier local authority") %>% group_by(area_name) %>% summarise(total = sum(cases))
 
 ui <- fluidPage(
   titlePanel("Choose your borough:"),
@@ -163,20 +182,21 @@ ui <- fluidPage(
     )
   )
 )
-
-
 # Define server logic required to draw a histogram
 server <- function(input, output) {
   filtered_data<- reactive({
     dplyr::filter(local, local$area_name==input$area_name)
   })
   
-  filtered_data_lw_total<- reactive({
+  filtered_data_7days<- reactive({
     dplyr::filter(cases_lw_per_area, cases_lw_per_area$area_name==input$area_name)
   })
 
-  output$plot <- renderPlotly({
+    filtered_data_7_14days<- reactive({
+    dplyr::filter(cases_2wago_per_area, cases_2wago_per_area$area_name==input$area_name)
+  })
 
+    output$plot <- renderPlotly({
     
    g = local %>% 
       filter(area_name %in% input$area_name) %>% 
@@ -186,26 +206,42 @@ server <- function(input, output) {
       geom_line(aes(x= filtered_data()$day, y=rollmean(filtered_data()$cases, 7, na.pad=TRUE))) +
       xlab("") + ylab("cases") + 
       theme_classic() 
-
-
   ggplotly(g, tooltip = "text")
     
   })
   
   output$box <- renderValueBox({
-  valueBox(paste(filtered_data_lw_total()$total, "cases were recorded last week in"))
+
+    pct = round((filtered_data_7days()$total - filtered_data_7_14days()$total) / filtered_data_7_14days()$total * 100,0)
+
+    if (pct > 0) {pct = paste("+", pct, sep = "")}
+
+    valueBox(paste(filtered_data_7days()$total," cases", " (", pct,"%) ",  " were recorded last week in"))
    })
-
 }
-
-
 shinyApp(ui = ui, server = server)
+```
+
+
+
+Row
+-------------------------------------
+
+
+### **Areas at lockdown risk**
+
+```{r}
+library(DT)
+datatable(compare_weeks)
+
 
 
 ```
 
 
-
+```{r}
+#https://chart-studio.plotly.com/~empet/15044/uk-choropleth-map/#code
+```
 
 
 Row {data-height=450}
@@ -217,6 +253,12 @@ Row {data-height=450}
 ```{r}
 
 regions = df %>% filter(area_type=='Region')
+
+last7_days = cases_per_regions %>% 
+  filter(date_range == "past7days")
+
+last7_14_days = cases_per_regions %>% 
+  filter(date_range == "past7-14days")
 
 
 library(shiny)
@@ -244,12 +286,17 @@ ui <- fluidPage(
 
 # Define server logic required to draw a histogram
 server <- function(input, output) {
+  
   filtered_data<- reactive({
     dplyr::filter(regions, regions$area_name==input$area_name)
   })
 
-    filtered_data_lw_total<- reactive({
-    dplyr::filter(cases_lw_per_regions, cases_lw_per_regions$area_name==input$area_name)
+  filtered_data_7days<- reactive({
+    dplyr::filter(last7_days, last7_days$area_name==input$area_name)
+  })
+
+  filtered_data_7_14days<- reactive({
+    dplyr::filter(last7_14_days, last7_14_days$area_name==input$area_name)
   })
 
     
@@ -267,9 +314,13 @@ server <- function(input, output) {
   ggplotly(g, tooltip = "text")
 
   })
-  
   output$box <- renderValueBox({
-    valueBox(paste(filtered_data_lw_total()$total, "cases were recorded last week in"))
+
+    pct = round((filtered_data_7days()$total - filtered_data_7_14days()$total) / filtered_data_7_14days()$total * 100,0)
+
+    if (pct > 0) {pct = paste("+", pct, sep = "")}
+
+    valueBox(paste(filtered_data_7days()$total, " cases"," (", pct,"%) ",  " were recorded last week in"))
    })
 }
 
@@ -331,13 +382,3 @@ ggplotly(g)   %>%
 
 
 
-Row
--------------------------------------
-
-
-### **Areas at high lockdown risk**
-
-```{r}
-library(DT)
-datatable(compare_weeks)
-```
