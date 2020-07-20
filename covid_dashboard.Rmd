@@ -18,16 +18,26 @@ library(flexdashboard)
 library(zoo)
 library(shiny)
 
+library(maps)
+library(mapdata)
+library(maptools)
+library(rgdal)
+library(ggmap)
+library(ggplot2)
+library(rgeos)
+library(broom)
+library(plyr)
+
 df <- read_csv('https://coronavirus.data.gov.uk/downloads/csv/coronavirus-cases_latest.csv')
 
 deaths <- read_csv('https://coronavirus.data.gov.uk/downloads/csv/coronavirus-deaths_latest.csv')
 
 
 df <- df %>%  
-  rename(cases=`Daily lab-confirmed cases`, day =`Specimen date`, area_name='Area name', area_type = `Area type`, id = `Area code`)
+  dplyr::rename(cases=`Daily lab-confirmed cases`, day =`Specimen date`, area_name='Area name', area_type = `Area type`, id = `Area code`)
 
 deaths <- deaths %>%  
-  rename(deaths=`Daily change in deaths`, day =`Reporting date`, area_name='Area name', area_type = `Area type`)
+  dplyr::rename(deaths=`Daily change in deaths`, day =`Reporting date`, area_name='Area name', area_type = `Area type`)
 
 
 # add columns to identify data for past 7 and 14 days
@@ -48,21 +58,19 @@ mutate(date_range = case_when(day >= one_week_ago+1 ~ 'past7days',
 
 cases_per_area = df %>% filter(area_type == "Lower tier local authority") %>% group_by(date_range, area_name) %>% summarise(total = sum(cases))
 
-cases_per_regions = df %>% filter(area_type == "Region") %>% group_by(date_range, area_name) %>% summarise(total = sum(cases))
+cases_per_regions = df %>% dplyr::filter(area_type == "Region") %>% dplyr::group_by(date_range, area_name) %>% dplyr::summarise(total = sum(cases))
 
 
 # calculate last week and 2 weeks ago cases per area for lockdown forecast
-england <- df %>% filter(area_type=='Nation') %>%
+last7_days <- df %>% filter(area_type=='Nation', date_range == "past7days") %>%
   group_by(date_range) %>% 
   summarise(total = sum(cases))
 
-last7_days = england %>% filter(date_range == "past7days")
-
 
 compare_weeks = df %>% 
-  filter(is.na(date_range) == FALSE, area_type == "Lower tier local authority") %>% 
-  group_by(area_name, id, date_range) %>% 
-  summarise(total = sum(cases)) %>% 
+  dplyr::filter(area_type == "Lower tier local authority") %>% 
+  dplyr::group_by(area_name, id, date_range) %>% 
+  dplyr::summarise(total = sum(cases)) %>% 
   spread(date_range, total) %>%
   mutate(diff = past7days - `past7-14days`, 
          diff_pct =  round(((past7days - `past7-14days`)/`past7-14days`) * 100,0),
@@ -70,7 +78,6 @@ compare_weeks = df %>%
   arrange(-diff)
 
 compare_weeks[is.na(compare_weeks)] <- 0
-
 
 compare_weeks$diff_pct <-
 ifelse(compare_weeks$diff_pct > 0, paste("+", compare_weeks$diff_pct, "%", sep = ""), paste(compare_weeks$diff_pct,"%", sep = "")) 
@@ -101,9 +108,9 @@ valueBox(as.character(total_cases$`Cumulative lab-confirmed cases`), caption = "
 
 
 ```{r}
-england <- df %>% filter(area_type=='Nation') %>%
-  group_by(date_range) %>% 
-  summarise(total = sum(cases))
+england <- df %>% dplyr::filter(area_type=='Nation') %>%
+  dplyr::group_by(date_range) %>% 
+  dplyr::summarise(total = sum(cases))
 
 last7_days = england %>% filter(date_range == "past7days")
 last7_14_days = england %>% filter(date_range == "past7-14days")
@@ -134,9 +141,9 @@ valueBox(as.character(total_deaths$`Cumulative deaths`) , caption = "total death
 
 
 ```{r}
-england <- deaths %>% filter(area_type=='Nation', area_name == 'England') %>%
-  group_by(date_range) %>% 
-  summarise(total = sum(deaths))
+england <- deaths %>% dplyr::filter(area_type=='Nation', area_name == 'England') %>%
+  dplyr::group_by(date_range) %>% 
+  dplyr::summarise(total = sum(deaths))
 
 last7_days = england %>% filter(date_range == "past7days")
 last7_14_days = england %>% filter(date_range == "past7-14days")
@@ -160,9 +167,9 @@ Row {data-height=450}
 local = df %>%  
   filter(area_type == "Lower tier local authority")
 
-cases_lw_per_area = df %>% filter(date_range == 'past7days', area_type == "Lower tier local authority") %>% group_by(area_name) %>% summarise(total = sum(cases))
+cases_lw_per_area = df %>% dplyr::filter(date_range == 'past7days', area_type == "Lower tier local authority") %>% dplyr::group_by(area_name) %>% dplyr::summarise(total = sum(cases))
 
-cases_2wago_per_area = df %>% filter(date_range == 'past7-14days', area_type == "Lower tier local authority") %>% group_by(area_name) %>% summarise(total = sum(cases))
+cases_2wago_per_area = df %>% dplyr::filter(date_range == 'past7-14days', area_type == "Lower tier local authority") %>% dplyr::group_by(area_name) %>% dplyr::summarise(total = sum(cases))
 
 ui <- fluidPage(
   titlePanel("Choose your borough:"),
@@ -240,15 +247,7 @@ datatable(compare_weeks)
 
 
 ```{r}
-library(maps)
-library(mapdata)
-library(maptools)
-library(rgdal)
-library(ggmap)
-library(ggplot2)
-library(rgeos)
-library(broom)
-library(plyr)
+
 
 
 #Load the shapefile
@@ -275,10 +274,10 @@ Row {data-height=450}
 
 ```{r}
 
-regions = df %>% filter(area_type=='Region')
+regions = df %>% dplyr::filter(area_type=='Region')
 
 last7_days = cases_per_regions %>% 
-  filter(date_range == "past7days")
+  dplyr::filter(date_range == "past7days")
 
 last7_14_days = cases_per_regions %>% 
   filter(date_range == "past7-14days")
@@ -365,9 +364,9 @@ Row
 ### **England cases**
 
 ```{r}
-england = df %>% filter(area_type=='Nation') %>%
-  group_by(day) %>% 
-  summarise(total = sum(cases))
+england = df %>% dplyr::filter(area_type=='Nation') %>%
+  dplyr::group_by(day) %>% 
+  dplyr::summarise(total = sum(cases))
 
 g <- england %>%  ggplot()+
                             geom_col(fill = '#02c39a', aes(x=day, y=total, text = paste(" date:", day, "\n", "cases:", total))) +
@@ -384,9 +383,9 @@ g <- england %>%  ggplot()+
 ### **UK deaths by nation**
 
 ```{r}
-deaths_by_nation = deaths %>% filter(area_type=='Nation') %>%
-  group_by(day, area_name) %>% 
-  summarise(total = sum(deaths))
+deaths_by_nation = deaths %>% dplyr::filter(area_type=='Nation') %>%
+  dplyr::group_by(day, area_name) %>% 
+  dplyr::summarise(total = sum(deaths))
 
 g <- deaths_by_nation %>%  ggplot(aes(x=day, y=total, fill = area_name)) +
                            geom_col() + 
