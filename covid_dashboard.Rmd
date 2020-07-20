@@ -33,7 +33,7 @@ deaths <- deaths %>%
 # add columns to identify data for past 7 and 14 days
 
 one_week_ago = Sys.Date() - 7
-two_weeks_ago = one_week_ago - 7
+two_weeks_ago = one_week_ago - 8
 
 df <- df %>%
 mutate(date_range = case_when(day >= one_week_ago ~ 'past7days',
@@ -228,13 +228,13 @@ Row
 -------------------------------------
 
 
-### **Areas at lockdown risk**
+### **Areas ordered by lockdown risk**
 
 ```{r}
 library(DT)
 datatable(compare_weeks)
 
-
+```
 
 ```
 
