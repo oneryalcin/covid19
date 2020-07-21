@@ -32,12 +32,16 @@ df <- read_csv('https://coronavirus.data.gov.uk/downloads/csv/coronavirus-cases_
 
 deaths <- read_csv('https://coronavirus.data.gov.uk/downloads/csv/coronavirus-deaths_latest.csv')
 
+population = read.table("population.txt", sep="\t", header=TRUE)
+
+
 
 df <- df %>%  
   dplyr::rename(cases=`Daily lab-confirmed cases`, day =`Specimen date`, area_name='Area name', area_type = `Area type`, id = `Area code`)
 
 deaths <- deaths %>%  
   dplyr::rename(deaths=`Daily change in deaths`, day =`Reporting date`, area_name='Area name', area_type = `Area type`)
+
 
 
 # add columns to identify data for past 7 and 14 days
@@ -75,13 +79,20 @@ compare_weeks = df %>%
   mutate(diff = past7days - `past7-14days`, 
          diff_pct =  round(((past7days - `past7-14days`)/`past7-14days`) * 100,0),
          eng_last_week = last7_days$total) %>%
-  arrange(-diff)
+  arrange(-diff) %>%
+  dplyr::select(-"<NA>")
 
 compare_weeks[is.na(compare_weeks)] <- 0
 
 compare_weeks$diff_pct <-
 ifelse(compare_weeks$diff_pct > 0, paste("+", compare_weeks$diff_pct, "%", sep = ""), paste(compare_weeks$diff_pct,"%", sep = "")) 
 
+# add population data
+
+population = population %>% dplyr::filter(AGE.GROUP == 'All ages') %>% dplyr::rename(id = "CODE")
+population$X2018 = as.numeric(str_remove_all(population$X2018, ","))
+compare_weeks <- left_join(compare_weeks, population, by = "id") 
+compare_weeks$cases_per_100k_past7days = round(compare_weeks$past7days/compare_weeks$X2018 * 100000,0)
 
 ```
 
@@ -240,7 +251,12 @@ Row
 
 ```{r}
 library(DT)
-datatable(compare_weeks)
+library(formattable)
+
+tb = compare_weeks %>% ungroup() %>% select(area_name, `past7-14days`, past7days, diff, diff_pct)
+
+datatable(tb)
+#formattable(tb)
 
 ```
 
@@ -260,9 +276,41 @@ mapdata <- tidy(shapefile, region="lau115cd")
 
 mapdata <- join(mapdata, compare_weeks, by="id") #merge the two datasets
 
-gg <- ggplot() + geom_polygon(data = mapdata, aes(x = long, y = lat, group = group, fill = diff), color = "#FFFFFF", size = 0.25)
-gg <- gg + coord_fixed(1)
-ggplotly(gg)
+# normalize difference data between -1 and 1
+#library(BBmisc)
+mapdata$log = normalize(mapdata$diff, method = "range", range = c(-1, 1), margin = 1L, on.constant = "quiet")
+
+
+#g <- ggplot() + 
+  #geom_polygon(data = mapdata, aes(x = long, y = lat, group = group, fill = diff, 
+#                                   text = paste(" area:", area_name, "\n", "diff:", diff)), color = "#FFFFFF", size = 0.25) +
+ # scale_fill_gradient(
+  #low = "#132B43",
+  #high = "#56B1F7",
+ # space = "Lab",
+#  na.value = "grey50",
+ # guide = "colourbar",
+  #aesthetics = "fill"
+#)
+
+  
+  #!!!!!!!!!!!!! add data for pupulation per area
+
+
+#gg <- gg + coord_fixed(1)
+
+gg <- ggplot() + geom_polygon(data = mapdata, aes(x = long, y = lat, group = group, fill = log(cases_per_100k_past7days+0.1), text = paste(" area:", area_name, "\n", "cases per 100,000 population:", cases_per_100k_past7days, "\n", "cases in last 7 days: ", past7days, "\n", "cases 2 weeks ago: ", past7-17days)), color = "#FFFFFF", size = 0.25) + 
+  coord_fixed(1) +
+  theme_minimal()
++ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = 'none')
++ theme(axis.title.x=element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank())
++ theme(axis.title.y=element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank())
+  scale_fill_gradient2(low = "#B3D8DD", mid = "#67B2BC", high = "#3499A6", na.value = "white")
+
+ggplotly(gg, tooltips = "text" )
+
+
+
 
 ```
 
